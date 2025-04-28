@@ -1,6 +1,8 @@
 const express = require('express');
 const { createInvoice, subscribeToInvoices } = require('./invoice');
 const cors = require('cors');
+const util = require('util');
+const lnd = require('./grpc');
 require('dotenv').config();
 
 const app = express();
@@ -9,19 +11,64 @@ app.use(express.json());
 
 const PORT = 3000;
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Test LND connection
+app.get('/test-connection', async (req, res) => {
+  try {
+    const getInfo = util.promisify(lnd.getInfo).bind(lnd);
+    const info = await getInfo({});
+    res.json(info);
+  } catch (error) {
+    console.error('Connection test failed:', error);
+    res.status(500).json({
+      error: 'Failed to connect to LND node',
+      details: error.message,
+    });
+  }
+});
+
 // Create Invoice endpoint
 app.post('/create-invoice', async (req, res) => {
-    const { amount } = req.body;
-    try {
-        const invoice = await createInvoice(amount);
-        res.json(invoice);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error creating invoice');
-    }
+  console.log('Received request body:', req.body);
+
+  const { amount } = req.body;
+
+  if (!amount || isNaN(amount) || amount <= 0) {
+    return res.status(400).json({
+      error: 'Invalid amount',
+      details: 'Amount must be a positive number',
+    });
+  }
+
+  try {
+    const invoice = await createInvoice(parseInt(amount));
+    console.log('Created invoice:', invoice);
+    res.json(invoice);
+  } catch (err) {
+    console.error('Error creating invoice:', err);
+    res.status(500).json({
+      error: 'Error creating invoice',
+      details: err.message,
+    });
+  }
 });
 
 app.listen(PORT, () => {
-    console.log(`Server listening at http://localhost:${PORT}`);
-    subscribeToInvoices(); // start payment listener
+  console.log(`Server listening at http://localhost:${PORT}`);
+
+  // Start invoice subscription with retry mechanism
+  try {
+    subscribeToInvoices();
+  } catch (error) {
+    console.error('Failed to start invoice subscription:', error);
+  }
+});
+
+// Handle uncaught errors
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled Rejection:', error);
 });
