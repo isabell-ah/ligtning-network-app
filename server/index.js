@@ -1,7 +1,6 @@
 const express = require('express');
 const { createInvoice, subscribeToInvoices } = require('./invoice');
 const cors = require('cors');
-const util = require('util');
 const lnd = require('./grpc');
 require('dotenv').config();
 
@@ -16,17 +15,16 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Test LND connection
+// test-connection
 app.get('/test-connection', async (req, res) => {
   try {
-    const getInfo = util.promisify(lnd.getInfo).bind(lnd);
-    const info = await getInfo({});
+    const info = await lnd.getInfo();
     res.json(info);
-  } catch (error) {
-    console.error('Connection test failed:', error);
+  } catch (err) {
+    console.error('Connection test failed:', err);
     res.status(500).json({
       error: 'Failed to connect to LND node',
-      details: error.message,
+      details: err.message,
     });
   }
 });
@@ -46,7 +44,6 @@ app.post('/create-invoice', async (req, res) => {
 
   try {
     const invoice = await createInvoice(parseInt(amount));
-    console.log('Created invoice:', invoice);
     res.json(invoice);
   } catch (err) {
     console.error('Error creating invoice:', err);
@@ -67,7 +64,6 @@ app.listen(PORT, () => {
     console.error('Failed to start invoice subscription:', error);
   }
 });
-
 // Handle uncaught errors
 process.on('unhandledRejection', (error) => {
   console.error('Unhandled Rejection:', error);
